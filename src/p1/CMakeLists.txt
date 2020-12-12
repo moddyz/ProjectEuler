@@ -3,4 +3,6 @@ file(GLOB CPPFILES *.cpp)
 cpp_executable(${EXECUTABLE_NAME}
     CPPFILES
         ${CPPFILES}
+    LIBRARIES
+        euler
 )

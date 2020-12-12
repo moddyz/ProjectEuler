@@ -1,10 +1,13 @@
 /// https://projecteuler.net/problem=1
 
 #include <stdio.h>
-#include <cassert>
+
+#include <euler/profiler.h>
+#include <euler/diagnostics.h>
 
 int SumOfMultiplesOfThreeOrFive(int upperLimit)
 {
+    PROFILE_FUNCTION();
     int sum = 0;
     for (int i = 0; i < upperLimit; ++i) {
         if (i % 3 == 0 || i % 5 == 0) {
@@ -17,11 +20,16 @@ int SumOfMultiplesOfThreeOrFive(int upperLimit)
 
 int main()
 {
+    PROFILER_SETUP();
+
     int upperLimit = 1000;
     int sum = SumOfMultiplesOfThreeOrFive(upperLimit);
     printf(
         "The sum of numbers which are a multiple of 3 and 5 under %i is: %i\n",
         upperLimit,
         sum);
-    assert(sum == 233168);
+    ASSERT(sum == 233168);
+
+    PROFILER_PRINT();
+    PROFILER_TEARDOWN();
 }

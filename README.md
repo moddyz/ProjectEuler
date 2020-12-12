@@ -2,13 +2,12 @@
 
 # ProjectEuler
 
-A starting point for a new CMake-based C++ project.
+C++ solutions to [Project Euler](https://projecteuler.net) problems.
 
 ## Table of Contents
 
 - [Dependencies](#dependencies)
 - [Building](#building)
-- [Template usage](#template-usage)
 
 ### Dependencies
 

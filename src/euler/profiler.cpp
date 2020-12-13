@@ -7,8 +7,9 @@
 #include <sstream>
 #include <stdio.h>
 #include <vector>
+#include <thread>
 
-// Compute the duration between \ref i_start and \ref i_stop.
+// Compute the timespec duration between \p i_start and \p i_stop.
 static timespec _ComputeDuration(const timespec& i_start,
                                  const timespec& i_stop)
 {
@@ -24,29 +25,26 @@ static timespec _ComputeDuration(const timespec& i_start,
 }
 
 // Number of bytes to allocated for per-record string storage.
-constexpr uint32_t c_profileRecordStringCapacity = 88;
+constexpr uint32_t c_profileRecordStringCapacity = 80;
 
-/// A single profile record.
-struct alignas(128) ProfileRecord
+/// \class ProfileRecord
+///
+/// A single timed record of executed code.
+class alignas(128) ProfileRecord
 {
-    char m_string[c_profileRecordStringCapacity]; // 88 bytes
-    timespec m_start = { 0, 0 };                  // 104 bytes
-    timespec m_stop = { 0, 0 };                   // 120 bytes
-    uint32_t m_line = 0;                          // 124 bytes
-    uint32_t m_stack = 0;                         // 128 bytes
-
+public:
     void Print() const
     {
         timespec duration = _ComputeDuration(m_start, m_stop);
-        uint32_t microseconds = duration.tv_sec * 1e6 + duration.tv_nsec / 1e3;
+        uint32_t microseconds =
+            (uint32_t)(duration.tv_sec * 1e6 + duration.tv_nsec / 1e3);
 
         std::stringstream ss;
-        for (uint32_t i = 0; i < m_stack; ++i) {
+        for (uint32_t stackIndex = 0; stackIndex < m_stack; ++stackIndex) {
             ss << " ";
         }
         ss << "\\_";
 
-        printf("=== Profiler Timings ===\n");
         printf("%s User-string: '%s', line: %u, stack: %u, duration: %u us\n",
                ss.str().c_str(),
                m_string,
@@ -54,24 +52,32 @@ struct alignas(128) ProfileRecord
                m_stack,
                microseconds);
     }
+
+    // Members.
+    char m_string[c_profileRecordStringCapacity]; // 80 bytes
+    timespec m_start = { 0, 0 };                  // 96 bytes
+    timespec m_stop = { 0, 0 };                   // 112 bytes
+    uint32_t m_line = 0;                          // 116 bytes
+    uint32_t m_stack = 0;                         // 120 bytes
+    std::thread::id m_threadId;                   // 128 bytes
 };
 
-static_assert(sizeof(ProfileRecord) == 128);
+static_assert(sizeof(ProfileRecord) == 128, "ProfileRecord must be 128 bytes in size");
 
 /// Singleton store of profile records.
-class ProfileRecordStore final
+class ProfileRecordContainer final
 {
 public:
-    ProfileRecordStore(uint32_t i_recordCapacity)
+    ProfileRecordContainer(uint32_t i_recordCapacity)
     {
         m_records.resize(i_recordCapacity);
     }
 
-    ~ProfileRecordStore() = default;
+    ~ProfileRecordContainer() = default;
 
     /// Cannot copy.
-    ProfileRecordStore(const ProfileRecordStore&) = delete;
-    ProfileRecordStore& operator=(const ProfileRecordStore&) = delete;
+    ProfileRecordContainer(const ProfileRecordContainer&) = delete;
+    ProfileRecordContainer& operator=(const ProfileRecordContainer&) = delete;
 
     /// Check out the next record to author timing and metadata into.
     ProfileRecord* Checkout()
@@ -127,37 +133,37 @@ private:
 };
 
 /// Singleton pointer.
-static ProfileRecordStore* g_recordStore = nullptr;
+static ProfileRecordContainer* g_recordContainer = nullptr;
 
 /// Global mutex to guard setup and teardown of store.
-static std::mutex g_profileRecordStoreMutex;
+static std::mutex g_recordContainerMutex;
 
 void ProfilerSetup(uint32_t i_capacity)
 {
-    const std::lock_guard<std::mutex> lock(g_profileRecordStoreMutex);
-    if (g_recordStore == nullptr) {
-        g_recordStore = new ProfileRecordStore(i_capacity);
+    const std::lock_guard<std::mutex> lock(g_recordContainerMutex);
+    if (g_recordContainer == nullptr) {
+        g_recordContainer = new ProfileRecordContainer(i_capacity);
     }
 }
 
 void ProfilerTeardown()
 {
-    const std::lock_guard<std::mutex> lock(g_profileRecordStoreMutex);
-    if (g_recordStore != nullptr) {
-        delete g_recordStore;
-        g_recordStore = nullptr;
+    const std::lock_guard<std::mutex> lock(g_recordContainerMutex);
+    if (g_recordContainer != nullptr) {
+        delete g_recordContainer;
+        g_recordContainer = nullptr;
     }
 }
 
 void ProfilerPrint()
 {
-    const std::lock_guard<std::mutex> lock(g_profileRecordStoreMutex);
-    if (g_recordStore == nullptr) {
+    const std::lock_guard<std::mutex> lock(g_recordContainerMutex);
+    if (g_recordContainer == nullptr) {
         return;
     }
 
-    uint32_t recordsSize = g_recordStore->GetRecordsSize();
-    std::vector<ProfileRecord> records = g_recordStore->GetRecords();
+    uint32_t recordsSize = g_recordContainer->GetRecordsSize();
+    std::vector<ProfileRecord> records = g_recordContainer->GetRecords();
     std::sort(records.begin(),
               records.begin() + recordsSize,
               [](const ProfileRecord& a, const ProfileRecord& b) {
@@ -168,6 +174,7 @@ void ProfilerPrint()
                   }
               });
 
+    printf("=== Profiler Timings ===\n");
     for (uint32_t recordIndex = 0; recordIndex < recordsSize; ++recordIndex) {
         records[recordIndex].Print();
     }
@@ -175,21 +182,22 @@ void ProfilerPrint()
 
 Profiler::Profiler(const char* i_file, uint32_t i_line, const char* i_string)
 {
-    if (g_recordStore != nullptr) {
-        m_profileRecord = g_recordStore->Checkout();
+    if (g_recordContainer != nullptr) {
+        m_profileRecord = g_recordContainer->Checkout();
         m_profileRecord->m_line = i_line;
+        m_profileRecord->m_threadId = std::this_thread::get_id();
         strncpy(
             m_profileRecord->m_string, i_string, c_profileRecordStringCapacity);
     }
 }
 
-/// Thread-local global for tracking stack position of this profile.
-static thread_local uint32_t c_profileStack = 0;
+/// Thread-local global variable for tracking stack position of profile records.
+static thread_local uint32_t tl_profileStack = 0;
 
 void Profiler::Start()
 {
     if (m_profileRecord != nullptr) {
-        m_profileRecord->m_stack = c_profileStack++;
+        m_profileRecord->m_stack = tl_profileStack++;
         clock_gettime(CLOCK_MONOTONIC, &(m_profileRecord->m_start));
     }
 }
@@ -198,7 +206,7 @@ void Profiler::Stop()
 {
     if (m_profileRecord != nullptr) {
         clock_gettime(CLOCK_MONOTONIC, &(m_profileRecord->m_stop));
-        c_profileStack--;
+        tl_profileStack--;
     }
 }
 

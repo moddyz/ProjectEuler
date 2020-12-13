@@ -1,16 +1,64 @@
 #pragma once
 
-#define _SCOPED_PROFILE(file, line, string)                                    \
-    ScopedProfiler profile##line(file, line, string);
-#define PROFILE(string) _SCOPED_PROFILE(__FILE__, __LINE__, string)
-#define PROFILE_FUNCTION()                                                     \
-    _SCOPED_PROFILE(__FILE__, __LINE__, __PRETTY_FUNCTION__)
-#define PROFILER_SETUP() ProfilerSetup();
-#define PROFILER_TEARDOWN() ProfilerTeardown();
-#define PROFILER_PRINT() ProfilerPrint();
+/// \file profiler.h
+///
+/// Simple instrumenting profiler.
+///
+/// A complete example usage:
+/// \code{.cpp}
+/// #include <euler/profiler.h>
+///
+/// int doWork() {
+///     PROFILE_FUNCTION();
+///     int sum = 0;
+///     for (int i = 0; i < 100000; ++i ) {
+///         sum += i;
+///     }
+///     return sum;
+/// }
+///
+/// int main() {
+///     PROFILER_SETUP();
+///
+///     doWork();
+///
+///     PROFILER_PRINT();
+///     PROFILER_TEARDOWN();
+/// }
+/// \endcode
 
 #include <euler/api.h>
 #include <stdint.h>
+
+/// \def PROFILER_SETUP
+///
+/// Allocate the memory required for profiling.
+#define PROFILER_SETUP() ProfilerSetup();
+
+#define _SCOPED_PROFILE(file, line, string)                                    \
+    ScopedProfiler profile##line(file, line, string);
+
+/// \def PROFILE
+///
+/// Insert a scoped profiler tagged with a user-supplied string.
+#define PROFILE(string) _SCOPED_PROFILE(__FILE__, __LINE__, string)
+
+/// \def PROFILE_FUNCTION
+///
+/// Insert a scoped profiler tagged with the pretty-function interpretation
+/// of the parent function.
+#define PROFILE_FUNCTION()                                                     \
+    _SCOPED_PROFILE(__FILE__, __LINE__, __PRETTY_FUNCTION__)
+
+/// \def PROFILER_TEARDOWN
+///
+/// Free all the memory allocated for profiling.
+#define PROFILER_TEARDOWN() ProfilerTeardown();
+
+/// \def PROFILER_PRINT
+///
+/// Pretty-print all the profiled timings in a human-readable form.
+#define PROFILER_PRINT() ProfilerPrint();
 
 /// Fwd declaration.
 class ProfileRecord;
@@ -36,7 +84,7 @@ public:
     /// Record the starting time.
     void Start();
 
-    /// Record the ending time.  Publish both the starting and ending time.
+    /// Record the ending time.
     void Stop();
 
 private:
@@ -48,7 +96,8 @@ private:
 
 /// \class ScopedProfiler
 ///
-/// Records the timing with respect to the lifetime of this object.
+/// Similar to \ref Profiler, but records the timing with respect to the
+/// lifetime of an instance of this class.
 class EULER_API ScopedProfiler final : public Profiler
 {
 public:

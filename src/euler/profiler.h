@@ -67,8 +67,7 @@ class ProfileRecord;
 ///
 /// Records the timing on Start() and Stop().
 ///
-/// It also records metadata about the location in the source code and a user
-/// supplied string.
+/// It also records call site information and a user supplied string.
 class EULER_API Profiler
 {
 public:
